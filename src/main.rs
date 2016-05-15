@@ -27,6 +27,7 @@ fn join_path(path: &Vec<String>) -> String {
     ret
 }
 
+// TODO: figure out borrowing thing so this doesn't need to be its own function
 fn get_querystring_value(req: &mut Request, name: &str)
         -> Result<String, &'static str> {
     let query = match req.get_ref::<UrlEncodedQuery>() {
@@ -51,23 +52,19 @@ fn get_querystring_value(req: &mut Request, name: &str)
 }
 
 fn handle_get(req: &mut Request) -> IronResult<Response> {
-    fn parameter_error() -> IronResult<Response> {
-        Ok(Response::with((status::BadRequest,
-                "Expected 1 parameter: 'name'\n")))
-    }
-
     let name = match get_querystring_value(req, "name") {
         Ok(v)   => v,
-        Err(_e) => return parameter_error(),
+        Err(_e) => return Ok(Response::with((status::BadRequest,
+                             "Expected 1 parameter: 'name'\n"))),
     };
 
     let mutex = req.get::<Write<EnvVars>>().unwrap();
-    let mut vars = mutex.lock().unwrap();
+    let vars = mutex.lock().unwrap();
 
     let value = match vars.get(name.as_str()) {
         Some(v) => v,
         None    => return Ok(Response::with((status::BadRequest,
-                             "No value found by that name"))),
+                             "No value found by that name\n"))),
     };
 
     Ok(Response::with((status::Ok, value.as_str())))
