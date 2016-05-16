@@ -27,35 +27,31 @@ fn join_path(path: &Vec<String>) -> String {
     ret
 }
 
-// TODO: figure out borrowing thing so this doesn't need to be its own function
-fn get_querystring_value(req: &mut Request, name: &str)
-        -> Result<String, &'static str> {
-    let query = match req.get_ref::<UrlEncodedQuery>() {
-        Ok(hashmap) => hashmap,
-        Err(_e) => return Err("Querystring parse error"),
-    };
-
-    if query.len() != 1 {
-        return Err("Invalid number of querystring parameters");
-    }
-
-    let name_vals = match query.get(name) {
-        Some(v) => v,
-        None    => return Err("Requested parameter not found"),
-    };
-
-    if name_vals.len() != 1 {
-        return Err("Invalid number of values");
-    }
-
-    Ok(name_vals[0].clone())
+fn bad_request(content: &str) -> IronResult<Response> {
+    Ok(Response::with((status::BadRequest, content)))
 }
 
 fn handle_get(req: &mut Request) -> IronResult<Response> {
-    let name = match get_querystring_value(req, "name") {
-        Ok(v)   => v,
-        Err(_e) => return Ok(Response::with((status::BadRequest,
-                             "Expected 1 parameter: 'name'\n"))),
+    let name = {
+        let query = match req.get_ref::<UrlEncodedQuery>() {
+            Ok(hashmap) => hashmap,
+            Err(_e) => return bad_request("Querystring parse error\n"),
+        };
+
+        if query.len() != 1 {
+            return bad_request("Invalid number of querystring parameters\n");
+        }
+
+        let name_vals = match query.get("name") {
+            Some(v) => v,
+            None    => return bad_request("Requested parameter not found\n"),
+        };
+
+        if name_vals.len() != 1 {
+            return bad_request("Invalid number of values\n");
+        }
+
+        name_vals[0].clone()
     };
 
     let mutex = req.get::<Write<EnvVars>>().unwrap();
