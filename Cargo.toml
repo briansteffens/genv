@@ -7,3 +7,5 @@ authors = ["Brian Steffens <briansteffens@gmail.com>"]
 iron = "*"
 persistent = "*"
 urlencoded = "*"
+serde = "*"
+serde_json = "*"

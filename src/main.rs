@@ -1,8 +1,10 @@
 extern crate iron;
 extern crate persistent;
 extern crate urlencoded;
+extern crate serde;
+extern crate serde_json;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use iron::prelude::*;
 use iron::typemap::Key;
 use iron::status;
@@ -77,6 +79,23 @@ fn handle_set(req: &mut Request) -> IronResult<Response> {
     Ok(Response::with((status::Ok, "State updated\n")))
 }
 
+fn handle_all(req: &mut Request) -> IronResult<Response> {
+    let mut var_map: BTreeMap<String, String> = BTreeMap::new();
+
+    let mutex = req.get::<Write<EnvVars>>().unwrap();
+    let vars = mutex.lock().unwrap();
+
+    for (name, value) in &*vars {
+        var_map.insert(name.clone(), value.clone());
+    }
+
+    match serde_json::to_string(&var_map) {
+        Ok(v)   => Ok(Response::with((status::Ok, v))),
+        Err(_e) => Ok(Response::with((status::InternalServerError,
+                      "Failed to serialize JSON response"))),
+    }
+}
+
 fn handle_404(_req: &mut Request) -> IronResult<Response> {
     Ok(Response::with((status::NotFound, "404 Not Found\n")))
 }
@@ -85,6 +104,7 @@ fn dispatch(req: &mut Request) -> IronResult<Response> {
     let function = match req.url.path[0].as_str() {
         "get" => handle_get,
         "set" => handle_set,
+        "all" => handle_all,
         _ => handle_404,
     };
 
