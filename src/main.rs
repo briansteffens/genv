@@ -16,43 +16,17 @@ impl Key for EnvVars {
     type Value = HashMap<String, String>;
 }
 
-fn join_path(path: &Vec<String>) -> String {
-    let mut ret = path.join("/");
-
-    // Remove trailing slash
-    if ret.ends_with("/") {
-        ret.pop();
-    }
-
-    ret
-}
-
 fn bad_request(content: &str) -> IronResult<Response> {
     Ok(Response::with((status::BadRequest, content)))
 }
 
 fn handle_get(req: &mut Request) -> IronResult<Response> {
-    let name = {
-        let query = match req.get_ref::<UrlEncodedQuery>() {
-            Ok(hashmap) => hashmap,
-            Err(_e) => return bad_request("Querystring parse error\n"),
-        };
+    if req.url.path.len() != 2 {
+        return Ok(Response::with((status::BadRequest,
+                  "Expected one and only one value to get by name")));
+    }
 
-        if query.len() != 1 {
-            return bad_request("Invalid number of querystring parameters\n");
-        }
-
-        let name_vals = match query.get("name") {
-            Some(v) => v,
-            None    => return bad_request("Requested parameter not found\n"),
-        };
-
-        if name_vals.len() != 1 {
-            return bad_request("Invalid number of values\n");
-        }
-
-        name_vals[0].clone()
-    };
+    let name = req.url.path[1].clone();
 
     let mutex = req.get::<Write<EnvVars>>().unwrap();
     let vars = mutex.lock().unwrap();
@@ -108,11 +82,7 @@ fn handle_404(_req: &mut Request) -> IronResult<Response> {
 }
 
 fn dispatch(req: &mut Request) -> IronResult<Response> {
-    let path = join_path(&req.url.path);
-
-    println!("REQ: {}", path);
-
-    let function = match path.as_str() {
+    let function = match req.url.path[0].as_str() {
         "get" => handle_get,
         "set" => handle_set,
         _ => handle_404,
