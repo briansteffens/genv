@@ -66,6 +66,43 @@ fn handle_get(req: &mut Request) -> IronResult<Response> {
     Ok(Response::with((status::Ok, value.as_str())))
 }
 
+fn handle_set(req: &mut Request) -> IronResult<Response> {
+    // Convert HashMap<String, Vec<String>> to HashMap<String, String>.
+    // Doing this in a separate pass before applying the values to the state
+    // in order to catch any validation errors before making changes to improve
+    // atomicity.
+    let mut processed = HashMap::new();
+
+    {
+        let query = match req.get_ref::<UrlEncodedQuery>() {
+            Ok(hashmap) => hashmap,
+            Err(_e) => return bad_request("Querystring parse error\n"),
+        };
+
+        if query.len() == 0 {
+            return bad_request("No values supplied to set\n");
+        }
+
+        for (name, value) in query {
+            if value.len() != 1 {
+                return bad_request("Expected 1 and only 1 value per name\n");
+            }
+
+            processed.insert(name.clone(), value[0].clone());
+        }
+    }
+
+    // Apply changes
+    let mutex = req.get::<Write<EnvVars>>().unwrap();
+    let mut vars = mutex.lock().unwrap();
+
+    for (name, value) in processed {
+        vars.insert(name.clone(), value);
+    }
+
+    Ok(Response::with((status::Ok, "State updated\n")))
+}
+
 fn handle_404(_req: &mut Request) -> IronResult<Response> {
     Ok(Response::with((status::NotFound, "404 Not Found\n")))
 }
@@ -77,6 +114,7 @@ fn dispatch(req: &mut Request) -> IronResult<Response> {
 
     let function = match path.as_str() {
         "get" => handle_get,
+        "set" => handle_set,
         _ => handle_404,
     };
 
