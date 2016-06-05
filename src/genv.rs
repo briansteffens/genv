@@ -21,51 +21,10 @@ struct Context<'a> {
 
 fn print_usage() {
     println!("Usage:");
+    println!("  genv config [server,secret] <VALUE>");
     println!("  genv set <NAME> <VALUE>");
     println!("  genv get <NAME>");
     println!("  genv all");
-}
-
-fn read_config(context: &mut Context) {
-    let config_fn = format!("{}/{}", context.home_dir, CONFIG_FN);
-    let mut config_file = match File::open(config_fn) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-
-    let mut config = String::new();
-    if config_file.read_to_string(&mut config).is_err() {
-        return;
-    }
-
-    context.config = match serde_json::from_str(&config) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-}
-
-fn save_config(context: &mut Context) {
-    let config_fn = format!("{}/{}", context.home_dir, CONFIG_FN);
-    let mut file = match File::create(config_fn) {
-        Ok(v) => v,
-        Err(_) => {
-            println!("Error opening config file for writing");
-            process::exit(1);
-        },
-    };
-
-    let serialized = match serde_json::to_string(&context.config) {
-        Ok(v) => v,
-        Err(_) => {
-            println!("Failed to serialize JSON");
-            process::exit(1);
-        },
-    };
-
-    if file.write_all(serialized.as_bytes()).is_err() {
-        println!("Failed to write to config file");
-        process::exit(1);
-    }
 }
 
 fn main() {
@@ -111,22 +70,43 @@ fn main() {
 
     if !context.config.contains_key("server") {
         println!("No server specified. Run genv config server <SERVER_URL>.");
-        return;
+        process::exit(1);
     }
 
     if !context.config.contains_key("secret") {
         println!("No secret specified. Run genc config secret <SECRET>.");
-        return;
+        process::exit(1);
     }
 
     let handler = match command.as_ref() {
         "get" => handle_get,
         "set" => handle_set,
         "update" => handle_update,
-        _ => return print_usage(),
+        _ => {
+            print_usage();
+            process::exit(1);
+        },
     };
 
     handler(&mut context);
+}
+
+fn read_config(context: &mut Context) {
+    let config_fn = format!("{}/{}", context.home_dir, CONFIG_FN);
+    let mut config_file = match File::open(config_fn) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let mut config = String::new();
+    if config_file.read_to_string(&mut config).is_err() {
+        return;
+    }
+
+    context.config = match serde_json::from_str(&config) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
 }
 
 fn handle_config(context: &mut Context) {
@@ -141,6 +121,30 @@ fn handle_config(context: &mut Context) {
     }
 
     context.config.insert(context.args[0].clone(), context.args[1].clone());
+}
+
+fn save_config(context: &mut Context) {
+    let config_fn = format!("{}/{}", context.home_dir, CONFIG_FN);
+    let mut file = match File::create(config_fn) {
+        Ok(v) => v,
+        Err(_) => {
+            println!("Error opening config file for writing");
+            process::exit(1);
+        },
+    };
+
+    let serialized = match serde_json::to_string(&context.config) {
+        Ok(v) => v,
+        Err(_) => {
+            println!("Failed to serialize JSON");
+            process::exit(1);
+        },
+    };
+
+    if file.write_all(serialized.as_bytes()).is_err() {
+        println!("Failed to write to config file");
+        process::exit(1);
+    }
 }
 
 fn handle_get(context: &mut Context) {

@@ -4,12 +4,12 @@ version = "0.1.0"
 authors = ["Brian Steffens <briansteffens@gmail.com>"]
 
 [[bin]]
-name = "client"
-path = "src/client.rs"
+name = "genv"
+path = "src/genv.rs"
 
 [[bin]]
-name = "server"
-path = "src/server.rs"
+name = "genv-server"
+path = "src/genv-server.rs"
 
 [dependencies]
 iron = "*"
