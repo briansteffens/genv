@@ -3,13 +3,31 @@ extern crate persistent;
 extern crate urlencoded;
 extern crate serde;
 extern crate serde_json;
+#[macro_use] extern crate hyper;
 
 use std::collections::{HashMap, BTreeMap};
+use std::process;
+use std::fs::File;
+use std::io::prelude::*;
+use std::ops::Deref;
 use iron::prelude::*;
 use iron::typemap::Key;
 use iron::status;
-use persistent::Write;
+use persistent::Read as PersistentRead;
+use persistent::Write as PersistentWrite;
 use urlencoded::UrlEncodedQuery;
+
+static CONFIG_FN: &'static str = "/etc/genv/config.json";
+static STATE_FN: &'static str = "/etc/genv/state.json";
+
+header! { (XSecret, "X-Secret") => [String] }
+
+#[derive(Copy, Clone)]
+pub struct Config;
+
+impl Key for Config {
+    type Value = HashMap<String, String>;
+}
 
 #[derive(Copy, Clone)]
 pub struct EnvVars;
@@ -30,7 +48,7 @@ fn handle_get(req: &mut Request) -> IronResult<Response> {
 
     let name = req.url.path[1].clone();
 
-    let mutex = req.get::<Write<EnvVars>>().unwrap();
+    let mutex = req.get::<PersistentWrite<EnvVars>>().unwrap();
     let vars = mutex.lock().unwrap();
 
     let value = match vars.get(name.as_str()) {
@@ -69,12 +87,14 @@ fn handle_set(req: &mut Request) -> IronResult<Response> {
     }
 
     // Apply changes
-    let mutex = req.get::<Write<EnvVars>>().unwrap();
+    let mutex = req.get::<PersistentWrite<EnvVars>>().unwrap();
     let mut vars = mutex.lock().unwrap();
 
     for (name, value) in processed {
         vars.insert(name.clone(), value);
     }
+
+    save_state(vars.deref());
 
     Ok(Response::with((status::Ok, "State updated\n")))
 }
@@ -82,7 +102,7 @@ fn handle_set(req: &mut Request) -> IronResult<Response> {
 fn handle_all(req: &mut Request) -> IronResult<Response> {
     let mut var_map: BTreeMap<String, String> = BTreeMap::new();
 
-    let mutex = req.get::<Write<EnvVars>>().unwrap();
+    let mutex = req.get::<PersistentWrite<EnvVars>>().unwrap();
     let vars = mutex.lock().unwrap();
 
     for (name, value) in &*vars {
@@ -101,6 +121,34 @@ fn handle_404(_req: &mut Request) -> IronResult<Response> {
 }
 
 fn dispatch(req: &mut Request) -> IronResult<Response> {
+    let config = req.get::<PersistentRead<Config>>().unwrap().clone();
+
+    {
+        // Read X-Secret header from request
+        let req_secret = match req.headers.get::<XSecret>() {
+            Some(v) => v,
+            None => {
+                return Ok(Response::with((status::Unauthorized,
+                          "401 Unauthorized missing X-Secret header\n")));
+            },
+        };
+
+        let secret = match config.get("secret") {
+            Some(v) => v,
+            None => {
+                return Ok(Response::with((status::InternalServerError,
+                          "500 Internal Server Error no secret in config\n")));
+            },
+        };
+
+        // Check X-Secret header against secret in config
+        if secret != &req_secret.to_string() {
+            return Ok(Response::with((status::Unauthorized,
+                      "401 Unauthorized incorrect X-Secret header value\n")));
+        }
+    }
+
+    // Route request to handler
     let function = match req.url.path[0].as_str() {
         "get" => handle_get,
         "set" => handle_set,
@@ -113,6 +161,78 @@ fn dispatch(req: &mut Request) -> IronResult<Response> {
 
 fn main() {
     let mut chain = Chain::new(dispatch);
-    chain.link(Write::<EnvVars>::both(HashMap::new()));
+    chain.link(PersistentRead::<Config>::both(read_config()));
+    chain.link(PersistentWrite::<EnvVars>::both(read_state()));
     Iron::new(chain).http("localhost:3000").unwrap();
+}
+
+fn read_config() -> HashMap<String, String> {
+    let mut config_file = match File::open(CONFIG_FN) {
+        Ok(v) => v,
+        Err(_) => {
+            println!("Unable to open config file /etc/genv-server.conf");
+            process::exit(1);
+        },
+    };
+
+    let mut config = String::new();
+    if config_file.read_to_string(&mut config).is_err() {
+        println!("Unable to read from config file");
+        process::exit(1);
+    }
+
+    let ret: HashMap<String, String> = match serde_json::from_str(&config) {
+        Ok(v) => v,
+        Err(_) => {
+            println!("Unable to parse config file");
+            process::exit(1);
+        },
+    };
+
+    if !ret.contains_key("secret") {
+        println!("Config file missing key 'secret'");
+        process::exit(1);
+    }
+
+    ret
+}
+
+fn read_state() -> HashMap<String, String> {
+    let mut file = match File::open(STATE_FN) {
+        Ok(v) => v,
+        Err(_) => return HashMap::new(),
+    };
+
+    let mut state = String::new();
+    if file.read_to_string(&mut state).is_err() {
+        return HashMap::new();
+    }
+
+    return match serde_json::from_str(&state) {
+        Ok(v) => v,
+        Err(_) => return HashMap::new(),
+    };
+}
+
+fn save_state(vars: &HashMap<String, String>) {
+    let mut file = match File::create(STATE_FN) {
+        Ok(v) => v,
+        Err(_) => {
+            println!("Unable to open state file for writing: {}", STATE_FN);
+            process::exit(1);
+        },
+    };
+
+    let serialized = match serde_json::to_string(&vars) {
+        Ok(v) => v,
+        Err(_) => {
+            println!("Failed to serialize state as JSON");
+            process::exit(1);
+        },
+    };
+
+    if file.write_all(serialized.as_bytes()).is_err() {
+        println!("Failed to write to state file: {}", STATE_FN);
+        process::exit(1);
+    }
 }
