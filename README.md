@@ -10,7 +10,8 @@ You'll need git and rust.
 ```bash
 git clone https://github.com/briansteffens/genv
 cd genv
-cargo build --release
+make
+sudo make install
 ```
 
 # Configuring the server
@@ -41,7 +42,7 @@ preferred text editor to make `/etc/genv/config.json` look like the following:
 Run the server:
 
 ```bash
-cargo run --bin genv-server
+genv-server
 ```
 
 By default the server will run as `localhost:3000`. Ideally this should be
@@ -52,8 +53,8 @@ behind a reverse proxy like Apache or nginx providing SSL termination.
 The client will need to be configured with the server's URL and secret:
 
 ```bash
-cargo run --bin genv config http://localhost:3000/
-cargo run --bin genv config $SOME_SECRET
+genv config http://localhost:3000/
+genv config $SOME_SECRET
 ```
 
 These values will be stored in `~/.genv.conf`.
@@ -61,7 +62,7 @@ These values will be stored in `~/.genv.conf`.
 Now you can give the server an environment variable:
 
 ```bash
-cargo run --bin genv set HELLO_WORLD "Greetings!"
+genv set HELLO_WORLD "Greetings!"
 ```
 
 The new value will be stored on the server in the file `/etc/genv/state.json`,
@@ -76,7 +77,7 @@ which will look something like this:
 You can query the server to get the value back:
 
 ```bash
-cargo run --bin genv get HELLO_WORLD
+genv get HELLO_WORLD
 ```
 
 Which should return `Greetings!`.
@@ -85,7 +86,7 @@ From this or another client, you can pull in all of the server's environment
 variables by doing an update:
 
 ```bash
-cargo run --bin genv update
+genv update
 ```
 
 This will create a file `~/.genv` with exports for each environment variable,
