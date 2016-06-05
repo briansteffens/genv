@@ -1,4 +1,4 @@
-extern crate hyper;
+#[macro_use] extern crate hyper;
 extern crate serde;
 extern crate serde_json;
 
@@ -11,6 +11,8 @@ use hyper::Client;
 
 static CONFIG_FN: &'static str = ".genv.conf";
 static GENV_FN: &'static str = ".genv";
+
+header! { (XSecret, "X-Secret") => [String] }
 
 struct Context<'a> {
     home_dir: &'a str,
@@ -147,21 +149,55 @@ fn save_config(context: &mut Context) {
     }
 }
 
+fn web_request(context: &Context, fragment: &str) -> String {
+    let server = match context.config.get("server") {
+        Some(v) => v,
+        None => {
+            println!("No server found. Run genv config server <SERVER_URL>.");
+            process::exit(1);
+        },
+    };
+
+    let endpoint = format!("{}{}", server, fragment);
+
+    let client = Client::new();
+    let mut req = client.get(&endpoint);
+
+    let secret = match context.config.get("secret") {
+        Some(v) => v,
+        None => {
+            println!("No secret found. Run genv config secret <SECRET>.");
+            process::exit(1);
+        },
+    };
+    req = req.header(XSecret(secret.to_owned()));
+
+    let mut res = match req.send() {
+        Ok(v) => v,
+        Err(_) => {
+            println!("Error making HTTP request to {}", endpoint);
+            process::exit(1);
+        },
+    };
+    assert_eq!(res.status, hyper::Ok);
+
+    let mut body = String::new();
+    if res.read_to_string(&mut body).is_err() {
+        println!("Error reading HTTP response body");
+        process::exit(1);
+    }
+    body
+}
+
 fn handle_get(context: &mut Context) {
     if context.args.len() != 1 {
         print_usage();
         process::exit(1);
     }
 
-    let endpoint = format!("{}get/{}", context.config.get("server").unwrap(),
-            context.args[0]);
-
-    let client = Client::new();
-    let mut res = client.get(&endpoint).send().unwrap();
-    assert_eq!(res.status, hyper::Ok);
-    let mut s = String::new();
-    res.read_to_string(&mut s).unwrap();
-    println!("{}", s);
+    let fragment = format!("get/{}", context.args[0]);
+    let res = web_request(&context, &fragment);
+    println!("{}", res);
 }
 
 fn handle_set(context: &mut Context) {
@@ -170,13 +206,8 @@ fn handle_set(context: &mut Context) {
         process::exit(1);
     }
 
-    let endpoint = format!("{}set?{}={}",
-            context.config.get("server").unwrap(),
-            context.args[0], context.args[1]);
-
-    let client = Client::new();
-    let res = client.get(&endpoint).send().unwrap();
-    assert_eq!(res.status, hyper::Ok);
+    let fragment = format!("set?{}={}", context.args[0], context.args[1]);
+    web_request(&context, &fragment);
 }
 
 fn handle_update(context: &mut Context) {
@@ -186,16 +217,9 @@ fn handle_update(context: &mut Context) {
     }
 
     // HTTP request for all genv variables
-    let endpoint = format!("{}all", context.config.get("server").unwrap());
+    let body = web_request(&context, "all");
 
-    let client = Client::new();
-    let mut res = client.get(&endpoint).send().unwrap();
-    assert_eq!(res.status, hyper::Ok);
-
-    let mut s = String::new();
-    res.read_to_string(&mut s).unwrap();
-
-    let all: BTreeMap<String, String> = match serde_json::from_str(&s) {
+    let all: BTreeMap<String, String> = match serde_json::from_str(&body) {
         Ok(v) => v,
         Err(_) => {
             println!("Unable to parse JSON response from server");
@@ -207,10 +231,7 @@ fn handle_update(context: &mut Context) {
     let mut output = String::new();
 
     for (key, value) in all {
-        output.push_str(&key);
-        output.push_str("=\"");
-        output.push_str(&value);
-        output.push_str("\"\n");
+        output.push_str(&format!("export {}=\"{}\"\n", &key, &value));
     }
 
     let genv_fn = format!("{}/{}", context.home_dir, GENV_FN);
