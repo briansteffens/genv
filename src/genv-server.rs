@@ -170,7 +170,7 @@ fn read_config() -> HashMap<String, String> {
     let mut config_file = match File::open(CONFIG_FN) {
         Ok(v) => v,
         Err(_) => {
-            println!("Unable to open config file /etc/genv-server.conf");
+            println!("Unable to open config file {}", CONFIG_FN);
             process::exit(1);
         },
     };

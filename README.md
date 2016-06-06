@@ -39,10 +39,11 @@ preferred text editor to make `/etc/genv/config.json` look like the following:
 }
 ```
 
-Run the server:
+Start and enable the server:
 
 ```bash
-genv-server
+systemctl enable genv-server
+systemctl start genv-server
 ```
 
 By default the server will run as `localhost:3000`. Ideally this should be

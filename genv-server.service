@@ -1,0 +1,14 @@
+[Unit]
+Description=genv-server.service
+After=network.target
+
+[Service]
+PIDFile=/run/genv-server.pid
+User=root
+Group=root
+ExecStart=/usr/bin/genv-server
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s TERM $MAINPID
+
+[Install]
+WantedBy=multi-user.target
